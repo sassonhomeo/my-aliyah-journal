@@ -3,7 +3,7 @@
   const SUPABASE_KEY = "sb_publishable_IA-iZFBxl_V24x8Z9Vtziw_Lm6ZWxCF";
   const KEYS = { posts:"my-aliyah-posts-v1", settings:"my-aliyah-settings-v1", journal:"my-aliyah-journal-v1" };
   const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  let user = null, ready = false, syncChain = Promise.resolve(), timers = {};
+  let user = null, ready = false, syncChain = Promise.resolve(), timers = {}, profilePhotoUrl = "";
 
   const esc = (v="") => String(v).replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -83,6 +83,9 @@
     originalSet.call(localStorage,KEYS.journal,JSON.stringify(journal));
     originalSet.call(localStorage,KEYS.settings,JSON.stringify(settings));
     window.myAliyahShipment=shipment||null;
+    const {data:profileFiles}=await client.storage.from("journal-photos").list(user.id,{search:"profile.jpg",limit:10});
+    if((profileFiles||[]).some(file=>file.name==="profile.jpg")) profilePhotoUrl=await signedPhoto(`${user.id}/profile.jpg`);
+    applyProfilePhoto(profilePhotoUrl);
   }
 
   async function dataUrlBlob(url){ return await (await fetch(url)).blob(); }
@@ -124,6 +127,38 @@
   }
   Storage.prototype.setItem=function(key,value){ originalSet.call(this,key,value); schedule(key); };
 
+  function applyProfilePhoto(url=""){
+    profilePhotoUrl=url;
+    if(url){
+      document.documentElement.style.setProperty("--profile-photo",`url("${url}")`);
+      document.body.classList.add("has-profile-photo");
+    }else{
+      document.documentElement.style.removeProperty("--profile-photo");
+      document.body.classList.remove("has-profile-photo");
+    }
+  }
+
+  function prepareProfilePhoto(file){
+    return new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=reject;
+      reader.onload=()=>{
+        const image=new Image();
+        image.onerror=reject;
+        image.onload=()=>{
+          const size=Math.min(image.naturalWidth,image.naturalHeight);
+          const sx=(image.naturalWidth-size)/2, sy=(image.naturalHeight-size)/2;
+          const canvas=document.createElement("canvas");
+          canvas.width=512;canvas.height=512;
+          canvas.getContext("2d").drawImage(image,sx,sy,size,size,0,0,512,512);
+          canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Photo could not be prepared.")),"image/jpeg",.84);
+        };
+        image.src=reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   function addAccountControls(){
     const observer=new MutationObserver(()=>{
       const card=document.querySelector(".settings-card");
@@ -131,9 +166,49 @@
       const block=document.createElement("div");
       block.className="setting-block";
       block.id="cloudAccount";
-      block.innerHTML=`<label>Signed-in account</label><p>${esc(user.email)}</p><button id="signOutCloud" class="secondary-button">Sign out</button>`;
+      block.innerHTML=`<label>Profile picture</label>
+        <p>Add a photo to appear beside your posts and at the top of the app.</p>
+        <div class="profile-photo-row">
+          <span class="avatar avatar-sarah profile-photo-preview"></span>
+          <label class="secondary-button profile-photo-button" for="profilePhotoInput">Choose photo</label>
+          <input id="profilePhotoInput" type="file" accept="image/*" hidden>
+          <button id="removeProfilePhoto" class="text-button" type="button" ${profilePhotoUrl?"":"hidden"}>Remove</button>
+        </div>
+        <p id="profilePhotoStatus" class="auth-message" aria-live="polite"></p>
+        <div class="account-divider"></div>
+        <label>Signed-in account</label><p>${esc(user.email)}</p>
+        <button id="signOutCloud" class="secondary-button">Sign out</button>`;
       card.prepend(block);
       block.querySelector("#signOutCloud").onclick=async()=>{await client.auth.signOut();location.reload();};
+      block.querySelector("#profilePhotoInput").onchange=async event=>{
+        const file=event.target.files?.[0];
+        if(!file)return;
+        const status=block.querySelector("#profilePhotoStatus");
+        status.textContent="Saving your profile picture…";
+        try{
+          const blob=await prepareProfilePhoto(file);
+          const path=`${user.id}/profile.jpg`;
+          const {error}=await client.storage.from("journal-photos").upload(path,blob,{contentType:"image/jpeg",upsert:true,cacheControl:"3600"});
+          if(error)throw error;
+          profilePhotoUrl=await signedPhoto(path);
+          applyProfilePhoto(profilePhotoUrl);
+          block.querySelector("#removeProfilePhoto").hidden=false;
+          status.textContent="Profile picture saved.";
+        }catch(error){
+          console.error(error);
+          status.textContent="The profile picture could not be saved. Please try another photo.";
+        }
+        event.target.value="";
+      };
+      block.querySelector("#removeProfilePhoto").onclick=async()=>{
+        const status=block.querySelector("#profilePhotoStatus");
+        status.textContent="Removing your profile picture…";
+        const {error}=await client.storage.from("journal-photos").remove([`${user.id}/profile.jpg`]);
+        if(error){status.textContent="The profile picture could not be removed.";return;}
+        applyProfilePhoto("");
+        block.querySelector("#removeProfilePhoto").hidden=true;
+        status.textContent="Profile picture removed.";
+      };
       document.querySelectorAll(".signin-options,.preview-label").forEach(el=>el.remove());
     });
     observer.observe(document.body,{childList:true,subtree:true});
