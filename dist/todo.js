@@ -1,28 +1,36 @@
 (() => {
-  const KEY="my-aliyah-todos-v1", read=()=>{try{return JSON.parse(localStorage.getItem(KEY))||[]}catch{return[]}}, save=v=>localStorage.setItem(KEY,JSON.stringify(v));
+  const KEY="my-aliyah-todos-v1";
+  const read=()=>{try{return JSON.parse(localStorage.getItem(KEY))||[]}catch{return[]}};
+  const save=v=>localStorage.setItem(KEY,JSON.stringify(v));
   const esc=(v="")=>String(v).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
   let todos=read();
-  const date=v=>v?new Date(v+"T00:00:00").toLocaleDateString([],{year:"numeric",month:"short",day:"numeric"}):"No date";
+  const postIds=()=>new Set(todos.filter(x=>x.postId).map(x=>x.postId));
   function render(){
-    const open=todos.filter(x=>!x.done).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999")),done=todos.filter(x=>x.done);
-    const item=x=>`<article class="card todo-item ${x.done?"todo-done":""}" data-todo-id="${esc(x.id)}"><label><input class="todo-check" type="checkbox" ${x.done?"checked":""}><span><strong>${esc(x.text)}</strong><small>${date(x.due)}${x.postText?" · From a post":""}</small>${x.postText?`<p class="todo-source">${esc(x.postText)}</p>`:""}</span></label><button class="text-button todo-delete">Delete</button></article>`;
-    return `<section class="card todo-composer"><h2>Add a To-Do</h2><textarea id="todoText" rows="2" maxlength="500" placeholder="What do you want to remember?"></textarea><div class="todo-add-row"><input id="todoDate" type="date"><button id="addTodo" class="primary-button">Add To-Do</button></div></section><div class="todo-list">${open.length?open.map(item).join(""):`<article class="card empty-state"><p>No upcoming To-Dos.</p></article>`}${done.length?`<h2 class="todo-completed-title">Completed</h2>${done.map(item).join("")}`:""}</div>`;
+    const items=todos.filter(x=>x.postId).map(x=>`<article class="card todo-item" data-todo-id="${esc(x.id)}"><p>${esc(x.postText||x.text)}</p></article>`).join("");
+    return items?`<div class="todo-list">${items}</div>`:`<article class="card empty-state"><div class="empty-icon">✓</div><h2>No To-Dos yet</h2><p>Touch “To-Do” beneath any post to keep it here.</p></article>`;
   }
   function showTodo(){
     document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.view==="todo"));
     document.querySelectorAll(".view").forEach(x=>x.classList.remove("active-view"));
-    const g=document.querySelector("#genericView");g.classList.add("active-view");document.querySelector("#pageTitle").textContent="To-Do";document.querySelector("#pageSubtitle").textContent="Things you want to remember for later.";g.innerHTML=render();document.querySelector(".sidebar")?.classList.remove("open");
+    const g=document.querySelector("#genericView");g.classList.add("active-view");document.querySelector("#pageTitle").textContent="To-Do";document.querySelector("#pageSubtitle").textContent="Things you want to remember.";g.innerHTML=render();document.querySelector(".sidebar")?.classList.remove("open");
   }
-  function add(text,due="",postId="",postText=""){text=(text||"").trim();if(!text)return;todos.unshift({id:crypto.randomUUID(),text,due,postId,postText,done:false,createdAt:new Date().toISOString()});save(todos)}
+  function togglePost(card,btn){
+    const id=card?.dataset.id;if(!id)return;
+    const existing=todos.findIndex(x=>x.postId===id);
+    if(existing>=0)todos.splice(existing,1);else{const text=card.querySelector(".post-text")?.textContent||"";todos.unshift({id:crypto.randomUUID(),postId:id,text,postText:text,createdAt:new Date().toISOString()})}
+    save(todos);paintButtons();
+  }
+  function paintButtons(){
+    const ids=postIds();document.querySelectorAll(".post").forEach(card=>{const b=card.querySelector(".todo-from-post");if(!b)return;const on=ids.has(card.dataset.id);b.classList.toggle("saved",on);b.textContent=on?"✓ To-Do":"○ To-Do"})
+  }
   function install(){
     const nav=document.querySelector(".sidebar nav"),generic=document.querySelector("#genericView"),feed=document.querySelector("#feed");if(!nav||!generic||!feed)return false;
     if(!nav.querySelector('[data-view="todo"]')){const b=document.createElement("button");b.className="nav-item";b.dataset.view="todo";b.innerHTML="<span>✓</span>To-Do";const book=nav.querySelector('[data-view="book"]'),settings=nav.querySelector('[data-view="settings"]');nav.insertBefore(b,book||settings);b.onclick=showTodo}
-    generic.addEventListener("click",e=>{if(e.target.id==="addTodo"){const text=document.querySelector("#todoText")?.value,due=document.querySelector("#todoDate")?.value;if(!text?.trim())return;add(text,due);showTodo()}const row=e.target.closest("[data-todo-id]");if(row&&e.target.classList.contains("todo-check")){const t=todos.find(x=>x.id===row.dataset.todoId);if(t){t.done=e.target.checked;save(todos);showTodo()}}if(row&&e.target.closest(".todo-delete")){todos=todos.filter(x=>x.id!==row.dataset.todoId);save(todos);showTodo()}});
-    feed.addEventListener("click",e=>{const btn=e.target.closest(".todo-from-post");if(!btn)return;const card=btn.closest(".post"),text=card?.querySelector(".post-text")?.textContent||"";const due=prompt("Reminder date (YYYY-MM-DD), or leave blank:","");if(due===null)return;const note=prompt("What do you want to remember?",text);if(note===null||!note.trim())return;add(note,due,card?.dataset.id||"",text);alert("Added to To-Do.")});
-    const observer=new MutationObserver(()=>document.querySelectorAll(".post .post-actions").forEach(actions=>{if(!actions.querySelector(".todo-from-post")){const b=document.createElement("button");b.className="post-action todo-from-post";b.textContent="✓ To-Do";actions.insertBefore(b,actions.querySelector(".edit-action"))}}));observer.observe(feed,{childList:true,subtree:true});
-    document.querySelectorAll(".post .post-actions").forEach(actions=>{if(!actions.querySelector(".todo-from-post")){const b=document.createElement("button");b.className="post-action todo-from-post";b.textContent="✓ To-Do";actions.insertBefore(b,actions.querySelector(".edit-action"))}});
+    feed.addEventListener("click",e=>{const btn=e.target.closest(".todo-from-post");if(!btn)return;e.stopPropagation();togglePost(btn.closest(".post"),btn)});
+    const addButtons=()=>{document.querySelectorAll(".post .post-actions").forEach(actions=>{if(!actions.querySelector(".todo-from-post")){const b=document.createElement("button");b.className="post-action todo-from-post";actions.insertBefore(b,actions.querySelector(".edit-action"))}});paintButtons()};
+    const observer=new MutationObserver(addButtons);observer.observe(feed,{childList:true,subtree:true});addButtons();
     return true;
   }
-  const style=document.createElement("style");style.textContent=`.todo-composer{padding:26px}.todo-composer h2{margin-top:0}.todo-composer textarea{width:100%;resize:vertical}.todo-add-row{display:flex;gap:12px;margin-top:12px;align-items:center}.todo-add-row input{min-height:44px}.todo-list{display:grid;gap:12px;margin-top:18px}.todo-item{display:flex;justify-content:space-between;gap:16px;padding:18px}.todo-item label{display:flex;gap:13px;align-items:flex-start;flex:1}.todo-item label span{display:grid;gap:4px}.todo-item small{color:#718295}.todo-source{margin:5px 0 0;color:#607489;font-size:13px}.todo-done strong{text-decoration:line-through;opacity:.65}.todo-completed-title{font-size:18px;margin:20px 0 0}@media(max-width:600px){.todo-add-row{align-items:stretch;flex-direction:column}}`;document.head.appendChild(style);
+  const style=document.createElement("style");style.textContent=`.todo-list{display:grid;gap:14px}.todo-item{padding:20px}.todo-item p{margin:0;line-height:1.55}.todo-from-post.saved{font-weight:700}`;document.head.appendChild(style);
   let n=0,t=setInterval(()=>{if(install()||++n>80)clearInterval(t)},150);
 })();
