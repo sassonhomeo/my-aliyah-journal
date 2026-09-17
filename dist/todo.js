@@ -3,34 +3,63 @@
   const read=()=>{try{return JSON.parse(localStorage.getItem(KEY))||[]}catch{return[]}};
   const save=v=>localStorage.setItem(KEY,JSON.stringify(v));
   const esc=(v="")=>String(v).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
-  let todos=read();
-  const postIds=()=>new Set(todos.filter(x=>x.postId).map(x=>x.postId));
+  let todos=read(),installed=false;
+  const postIds=()=>new Set(todos.map(x=>x.postId).filter(Boolean));
+
   function render(){
-    const items=todos.filter(x=>x.postId).map(x=>`<article class="card todo-item" data-todo-id="${esc(x.id)}"><p>${esc(x.postText||x.text)}</p></article>`).join("");
-    return items?`<div class="todo-list">${items}</div>`:`<article class="card empty-state"><div class="empty-icon">✓</div><h2>No To-Dos yet</h2><p>Touch “To-Do” beneath any post to keep it here.</p></article>`;
+    const items=todos.filter(x=>x.postId).map(x=>`<article class="post card"><p class="post-text">${esc(x.postText||x.text||"")}</p></article>`).join("");
+    return items?`<div class="feed">${items}</div>`:`<article class="card empty-state"><div class="empty-icon">✓</div><h2>No To-Dos yet</h2><p>Touch “To-Do” beneath any post to keep it here.</p></article>`;
   }
+
+  function closeMenu(){document.querySelector(".sidebar")?.classList.remove("open")}
   function showTodo(){
     document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.view==="todo"));
     document.querySelectorAll(".view").forEach(x=>x.classList.remove("active-view"));
-    const g=document.querySelector("#genericView");g.classList.add("active-view");document.querySelector("#pageTitle").textContent="To-Do";document.querySelector("#pageSubtitle").textContent="Things you want to remember.";g.innerHTML=render();document.querySelector(".sidebar")?.classList.remove("open");
+    const g=document.querySelector("#genericView");
+    if(!g)return;
+    g.classList.add("active-view");
+    document.querySelector("#pageTitle").textContent="To-Do";
+    document.querySelector("#pageSubtitle").textContent="Things you want to remember.";
+    g.innerHTML=render();closeMenu();
   }
-  function togglePost(card,btn){
+
+  function paintButtons(){
+    const ids=postIds();
+    document.querySelectorAll("#feed .post").forEach(card=>{
+      const b=card.querySelector(".todo-from-post");if(!b)return;
+      const on=ids.has(card.dataset.id);b.classList.toggle("saved",on);b.textContent=on?"✓ To-Do":"○ To-Do";
+    });
+  }
+
+  function addButtons(){
+    document.querySelectorAll("#feed .post .post-actions").forEach(actions=>{
+      if(actions.querySelector(".todo-from-post"))return;
+      const b=document.createElement("button");b.type="button";b.className="post-action todo-from-post";
+      actions.insertBefore(b,actions.querySelector(".edit-action"));
+    });paintButtons();
+  }
+
+  function togglePost(card){
     const id=card?.dataset.id;if(!id)return;
-    const existing=todos.findIndex(x=>x.postId===id);
-    if(existing>=0)todos.splice(existing,1);else{const text=card.querySelector(".post-text")?.textContent||"";todos.unshift({id:crypto.randomUUID(),postId:id,text,postText:text,createdAt:new Date().toISOString()})}
+    const i=todos.findIndex(x=>x.postId===id);
+    if(i>=0)todos.splice(i,1);
+    else{const text=card.querySelector(".post-text")?.textContent||"";todos.unshift({id:(crypto.randomUUID?crypto.randomUUID():String(Date.now())),postId:id,postText:text})}
     save(todos);paintButtons();
   }
-  function paintButtons(){
-    const ids=postIds();document.querySelectorAll(".post").forEach(card=>{const b=card.querySelector(".todo-from-post");if(!b)return;const on=ids.has(card.dataset.id);b.classList.toggle("saved",on);b.textContent=on?"✓ To-Do":"○ To-Do"})
-  }
+
   function install(){
-    const nav=document.querySelector(".sidebar nav"),generic=document.querySelector("#genericView"),feed=document.querySelector("#feed");if(!nav||!generic||!feed)return false;
-    if(!nav.querySelector('[data-view="todo"]')){const b=document.createElement("button");b.className="nav-item";b.dataset.view="todo";b.innerHTML="<span>✓</span>To-Do";const book=nav.querySelector('[data-view="book"]'),settings=nav.querySelector('[data-view="settings"]');nav.insertBefore(b,book||settings);b.onclick=showTodo}
-    feed.addEventListener("click",e=>{const btn=e.target.closest(".todo-from-post");if(!btn)return;e.stopPropagation();togglePost(btn.closest(".post"),btn)});
-    const addButtons=()=>{document.querySelectorAll(".post .post-actions").forEach(actions=>{if(!actions.querySelector(".todo-from-post")){const b=document.createElement("button");b.className="post-action todo-from-post";actions.insertBefore(b,actions.querySelector(".edit-action"))}});paintButtons()};
-    const observer=new MutationObserver(addButtons);observer.observe(feed,{childList:true,subtree:true});addButtons();
+    if(installed)return true;
+    const nav=document.querySelector(".sidebar nav"),feed=document.querySelector("#feed"),chip=document.querySelector(".profile-chip span:last-child");
+    if(!nav||!feed||!chip||!chip.textContent.trim())return false;
+    installed=true;
+    let b=nav.querySelector('[data-view="todo"]');
+    if(!b){b=document.createElement("button");b.type="button";b.className="nav-item";b.dataset.view="todo";b.innerHTML="<span>✓</span>To-Do";const book=nav.querySelector('[data-view="book"]'),settings=nav.querySelector('[data-view="settings"]');nav.insertBefore(b,book||settings)}
+    b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();showTodo()});
+    feed.addEventListener("click",e=>{const btn=e.target.closest(".todo-from-post");if(!btn)return;e.preventDefault();e.stopPropagation();togglePost(btn.closest(".post"))},true);
+    new MutationObserver(addButtons).observe(feed,{childList:true,subtree:true});addButtons();
     return true;
   }
-  const style=document.createElement("style");style.textContent=`.todo-list{display:grid;gap:14px}.todo-item{padding:20px}.todo-item p{margin:0;line-height:1.55}.todo-from-post.saved{font-weight:700}`;document.head.appendChild(style);
-  let n=0,t=setInterval(()=>{if(install()||++n>80)clearInterval(t)},150);
+
+  const style=document.createElement("style");style.textContent=`.todo-from-post.saved{font-weight:700}.todo-list .post{padding:20px}`;document.head.appendChild(style);
+  let tries=0;const timer=setInterval(()=>{if(install()||++tries>200)clearInterval(timer)},100);
 })();
