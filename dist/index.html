@@ -28,12 +28,12 @@
     <main class="main">
       <header class="topbar">
         <button class="menu-button" id="menuButton" aria-label="Open menu">☰</button>
-        <div><h1 id="pageTitle">Good morning, Sarah</h1><p id="pageSubtitle"></p></div>
-        <div class="profile-chip"><span class="avatar avatar-sarah">S</span><span>Sarah</span></div>
+        <div><h1 id="pageTitle">My Aliyah Journal+</h1><p id="pageSubtitle"></p></div>
+        <div class="profile-chip"><span class="avatar avatar-sarah"></span><span></span></div>
       </header>
       <section id="feedView" class="view active-view">
         <article class="composer card">
-          <div class="composer-row"><span class="avatar avatar-sarah">S</span><textarea id="postText" rows="2" maxlength="600" placeholder="What’s up?"></textarea></div>
+          <div class="composer-row"><span class="avatar avatar-sarah"></span><textarea id="postText" rows="2" maxlength="600" placeholder="What’s up?"></textarea></div>
           <div id="imagePreviewWrap" class="image-preview-wrap" hidden><img id="imagePreview" alt="Your selected photo"><button id="removePhoto" class="icon-button" aria-label="Remove photo">×</button></div>
           <div class="composer-actions"><div class="composer-tools"><label class="tool-button" for="photoInput">▧ <span>Add photo</span></label><input id="photoInput" type="file" accept="image/*" hidden><button class="tool-button" id="moodButton">☺ <span>Add mood</span></button><span id="selectedMood" class="selected-mood" hidden></span></div><button id="postButton" class="primary-button">Post it</button></div>
         </article>
@@ -47,5 +47,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="cloud.js"></script>
   <script src="book.js"></script>
+  <script src="todo.js"></script>
 </body>
 </html>
