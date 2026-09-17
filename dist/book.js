@@ -23,6 +23,7 @@
     btn.addEventListener("click",()=>{
       document.querySelectorAll(".nav-item").forEach(x=>x.classList.remove("active"));btn.classList.add("active");
       document.querySelectorAll(".view").forEach(x=>x.classList.remove("active-view"));generic.classList.add("active-view");
+      document.querySelector(".sidebar")?.classList.remove("open");
       const title=document.querySelector("#pageTitle"),sub=document.querySelector("#pageSubtitle");if(title)title.textContent="Make My Book";if(sub)sub.textContent="Turn your journey into a keepsake.";
       generic.innerHTML=renderBook();
       generic.querySelectorAll('.book-theme input').forEach(r=>r.onchange=()=>{generic.querySelectorAll('.book-theme').forEach(x=>x.classList.remove('selected'));r.closest('.book-theme').classList.add('selected')});
