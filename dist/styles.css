@@ -109,7 +109,7 @@ h1 { color: var(--navy); font-size: clamp(1.85rem, 3vw, 2.6rem); line-height: 1;
 .response small { color: var(--muted); font-size: .76rem; margin-left: 6px; }
 .response p { margin: 5px 0 0; line-height: 1.45; font-size: .9rem; }
 .post-actions { display: flex; gap: 6px; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
-.post-action { border: 0; background: transparent; color: var(--muted); padding: 8px 10px; border-radius: 8px; }
+.post-action { border: 0; background: transparent; color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: .8rem; }
 .post-action:hover, .post-action.saved { color: var(--navy); background: var(--blue-soft); }
 .delete-action { margin-left: auto; }
 .delete-action:hover { color: #9a453e; background: var(--coral-soft); }

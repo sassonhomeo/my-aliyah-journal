@@ -6,6 +6,12 @@
   let todos=read(),installed=false;
   const postIds=()=>new Set(todos.map(x=>x.postId).filter(Boolean));
 
+  function cleanOrphans(){
+    const currentIds=new Set([...document.querySelectorAll("#feed .post[data-id]")].map(x=>x.dataset.id));
+    const cleaned=todos.filter(x=>!x.postId||currentIds.has(x.postId));
+    if(cleaned.length!==todos.length){todos=cleaned;save(todos)}
+  }
+
   function render(){
     const items=todos.filter(x=>x.postId).map(x=>`<article class="post card"><p class="post-text">${esc(x.postText||x.text||"")}</p></article>`).join("");
     return items?`<div class="feed todo-list">${items}</div>`:`<article class="card empty-state"><div class="empty-icon">✓</div><h2>No To-Dos yet</h2><p>Touch “To-Do” beneath any post to keep it here.</p></article>`;
@@ -61,6 +67,17 @@
     paintButtons();
   }
 
+  function syncPost(event){
+    const {postId,postText}=event.detail||{};
+    if(!postId)return;
+    const i=todos.findIndex(x=>x.postId===postId);
+    if(i<0)return;
+    if(event.type==="my-aliyah:post-deleted")todos.splice(i,1);
+    else todos[i].postText=postText||"";
+    save(todos);
+    if(document.querySelector('[data-view="todo"]')?.classList.contains("active"))showTodo();
+  }
+
   function install(){
     if(installed)return true;
     const nav=document.querySelector(".sidebar nav"),feed=document.querySelector("#feed"),chip=document.querySelector(".profile-chip span:last-child");
@@ -88,9 +105,13 @@
       if(records.some(record=>[...record.addedNodes].some(node=>node.nodeType===1)))addButtons();
     });
     observer.observe(feed,{childList:true,subtree:true});
+    cleanOrphans();
     addButtons();
     return true;
   }
+
+  document.addEventListener("my-aliyah:post-deleted",syncPost);
+  document.addEventListener("my-aliyah:post-updated",syncPost);
 
   const style=document.createElement("style");
   style.textContent=`.todo-from-post.saved{font-weight:700}.todo-list .post{padding:20px}`;
