@@ -5,10 +5,10 @@ function loadJson(k,f){try{return JSON.parse(localStorage.getItem(k))??f}catch{r
 function migrate(primary,legacy,fallback){const saved=loadJson(primary,null);if(saved!==null)return saved;const old=loadJson(legacy,null);return old!==null?old:fallback}
 let settings={...defaults,...(loadJson(KEYS.settings,null)??loadJson(KEYS.legacySettings,null)??loadJson("innercircle-demo-settings-v2",defaults))};
 const myAliyahPosts=loadJson(KEYS.posts,null),justMinePosts=loadJson(KEYS.legacyPosts,null),originalPosts=loadJson(KEYS.olderPosts,null),oldestPosts=loadJson("innercircle-demo-posts-v1",null);
-let posts=Array.isArray(myAliyahPosts)&&myAliyahPosts.length?myAliyahPosts:Array.isArray(justMinePosts)&&justMinePosts.length?justMinePosts:Array.isArray(originalPosts)&&originalPosts.length?originalPosts:Array.isArray(oldestPosts)&&oldestPosts.length?oldestPosts:[];
+let posts=Array.isArray(myAliyahPosts)?myAliyahPosts:Array.isArray(justMinePosts)&&justMinePosts.length?justMinePosts:Array.isArray(originalPosts)&&originalPosts.length?originalPosts:Array.isArray(oldestPosts)&&oldestPosts.length?oldestPosts:[];
 posts=posts.map(p=>({...p,createdAt:p.createdAt||new Date().toISOString(),tag:p.tag||""}));
 const myAliyahJournal=loadJson(KEYS.journal,null),justMineJournal=loadJson(KEYS.legacyJournal,null),originalJournal=loadJson("innercircle-demo-journal-v1",null);
-let journalEntries=(Array.isArray(myAliyahJournal)&&myAliyahJournal.length?myAliyahJournal:Array.isArray(justMineJournal)&&justMineJournal.length?justMineJournal:Array.isArray(originalJournal)?originalJournal:[]).map(e=>({...e,createdAt:e.createdAt||new Date().toISOString()}));
+let journalEntries=(Array.isArray(myAliyahJournal)?myAliyahJournal:Array.isArray(justMineJournal)&&justMineJournal.length?justMineJournal:Array.isArray(originalJournal)?originalJournal:[]).map(e=>({...e,createdAt:e.createdAt||new Date().toISOString()}));
 let selectedImage="",selectedMood="",activeView="feed",editingJournalId="";
 function persist(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch{showToast("Browser storage is full. Download a backup and remove older photos.");return false}}
 const savePosts=()=>persist(KEYS.posts,posts),saveSettings=()=>persist(KEYS.settings,settings),saveJournal=()=>persist(KEYS.journal,journalEntries);

@@ -8,6 +8,40 @@
   const esc = (v="") => String(v).replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
   const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
   const originalSet = Storage.prototype.setItem;
+  const acknowledged = { post:new Map(), journal:new Map() };
+  const CACHE_OWNER = "my-aliyah-cache-owner-v1";
+
+  function entryRow(type, x){
+    return {id:x.id,user_id:user.id,entry_type:type,title:type==="journal"?(x.title||null):null,body:type==="post"?(x.text||""):(x.body||""),mood:type==="post"?(x.mood||null):null,is_saved:type==="post"?!!x.saved:false,occurred_at:x.createdAt||new Date().toISOString()};
+  }
+  function remember(type, items){
+    acknowledged[type]=new Map(items.map(x=>[x.id,JSON.stringify(entryRow(type,x))]));
+  }
+  function preserveCache(){
+    const posts=read(KEYS.posts,[]), journal=read(KEYS.journal,[]);
+    if(!posts.length && !journal.length) return;
+    const owner=localStorage.getItem(CACHE_OWNER)||"unassigned";
+    const key=`my-aliyah-recovery-v1:${owner}`;
+    const snapshots=read(key,[]);
+    const snapshot={posts,journalEntries:journal,savedAt:new Date().toISOString()};
+    // Keep the largest copy as well as recent copies, before replacing any cache.
+    const signature=x=>JSON.stringify([x.posts,x.journalEntries]);
+    if(snapshots.some(x=>signature(x)===signature(snapshot)))return;
+    snapshots.push(snapshot);
+    const largest=[...snapshots].sort((a,b)=>(b.posts.length+b.journalEntries.length)-(a.posts.length+a.journalEntries.length))[0];
+    const kept=[largest,...snapshots.filter(x=>x!==largest).slice(-4)];
+    originalSet.call(localStorage,key,JSON.stringify(kept));
+  }
+  async function readAll(table){
+    const rows=[];
+    for(let offset=0;;offset+=500){
+      const {data,error}=await client.from(table).select("*").eq("user_id",user.id).order("id",{ascending:true}).range(offset,offset+499);
+      if(error)throw error;
+      if(!Array.isArray(data))throw new Error(`Could not load ${table}.`);
+      rows.push(...data);
+      if(data.length<500)return rows;
+    }
+  }
 
   function authScreen(message=""){
     document.body.innerHTML = `<main class="auth-page">
@@ -61,12 +95,15 @@
   }
 
   async function loadCloud(){
-    const [{data:profile},{data:entries},{data:photos},{data:shipment}] = await Promise.all([
+    const [profileResult,entries,photos,shipmentResult] = await Promise.all([
       client.from("profiles").select("*").eq("id",user.id).maybeSingle(),
-      client.from("entries").select("*").eq("user_id",user.id).order("occurred_at",{ascending:false}),
-      client.from("photos").select("*").eq("user_id",user.id),
+      readAll("entries"),
+      readAll("photos"),
       client.from("shipments").select("*").eq("user_id",user.id).maybeSingle()
     ]);
+    if(profileResult.error)throw profileResult.error;
+    if(shipmentResult.error)throw shipmentResult.error;
+    const profile=profileResult.data, shipment=shipmentResult.data;
     const photoMap={};
     for(const p of photos||[]) (photoMap[p.entry_id] ||= []).push(p);
     const posts=[], journal=[];
@@ -79,6 +116,10 @@
       }
     }
     const settings={name:profile?.display_name||user.user_metadata?.full_name||user.email.split("@")[0],theme:profile?.theme||"navy",setupComplete:true,pin:"",aliyahDate:profile?.aliyah_date||""};
+    preserveCache();
+    remember("post",posts);
+    remember("journal",journal);
+    originalSet.call(localStorage,CACHE_OWNER,user.id);
     originalSet.call(localStorage,KEYS.posts,JSON.stringify(posts));
     originalSet.call(localStorage,KEYS.journal,JSON.stringify(journal));
     originalSet.call(localStorage,KEYS.settings,JSON.stringify(settings));
@@ -90,23 +131,43 @@
 
   async function dataUrlBlob(url){ return await (await fetch(url)).blob(); }
   async function syncEntries(type, items){
-    const {data:old}=await client.from("entries").select("id").eq("user_id",user.id).eq("entry_type",type);
-    const oldIds=(old||[]).map(x=>x.id);
-    if(oldIds.length) await client.from("entries").delete().in("id",oldIds);
-    if(!items.length) return;
-    const rows=items.map(x=>({id:x.id,user_id:user.id,entry_type:type,title:type==="journal"?(x.title||null):null,body:type==="post"?(x.text||""):(x.body||""),mood:type==="post"?(x.mood||null):null,is_saved:type==="post"?!!x.saved:false,occurred_at:x.createdAt||new Date().toISOString()}));
-    const {error}=await client.from("entries").insert(rows);
-    if(error) throw error;
-    if(type==="post"){
-      for(const item of items.filter(x=>x.image)){
+    if(!Array.isArray(items))throw new Error("Invalid journal data.");
+    const previous=acknowledged[type];
+    const current=new Map();
+    for(const item of items){
+      if(!item.id || current.has(item.id))throw new Error("Invalid or duplicate entry ID.");
+      current.set(item.id,item);
+    }
+    // Save new/changed entries first. Never delete and rebuild the account's list.
+    for(const item of items){
+      const row=entryRow(type,item), signature=JSON.stringify(row);
+      if(previous.get(item.id)===signature)continue;
+      const {error}=await client.from("entries").upsert(row,{onConflict:"id"});
+      if(error)throw error;
+      if(type==="post" && item.image){
         let path=item._storagePath||"";
         if(item.image.startsWith("data:")){
           path=`${user.id}/${item.id}.jpg`;
           const {error:uploadError}=await client.storage.from("journal-photos").upload(path,await dataUrlBlob(item.image),{contentType:"image/jpeg",upsert:true});
-          if(uploadError) throw uploadError;
+          if(uploadError)throw uploadError;
         }
-        if(path) await client.from("photos").insert({user_id:user.id,entry_id:item.id,storage_path:path});
+        if(path){
+          const {data:existing,error:photoError}=await client.from("photos").select("id").eq("user_id",user.id).eq("entry_id",item.id).eq("storage_path",path);
+          if(photoError)throw photoError;
+          if(!existing?.length){
+            const {error:insertError}=await client.from("photos").insert({user_id:user.id,entry_id:item.id,storage_path:path});
+            if(insertError)throw insertError;
+          }
+        }
       }
+      previous.set(item.id,signature);
+    }
+    // Only remove entries this browser actually loaded and the user removed.
+    const removed=[...previous.keys()].filter(id=>!current.has(id));
+    for(const id of removed){
+      const {error}=await client.from("entries").delete().eq("user_id",user.id).eq("entry_type",type).eq("id",id);
+      if(error)throw error;
+      previous.delete(id);
     }
   }
   async function syncSettings(){
@@ -125,7 +186,11 @@
       }).catch(err=>{ console.error(err); alert("My Aliyah could not save to the cloud. Please check your connection and try again."); });
     },500);
   }
-  Storage.prototype.setItem=function(key,value){ originalSet.call(this,key,value); schedule(key); };
+  Storage.prototype.setItem=function(key,value){
+    if(this===localStorage && ready && (key===KEYS.posts || key===KEYS.journal))preserveCache();
+    originalSet.call(this,key,value);
+    if(this===localStorage)schedule(key);
+  };
 
   function applyProfilePhoto(url=""){
     profilePhotoUrl=url;
