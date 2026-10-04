@@ -282,7 +282,7 @@
 
   function loadApp(){
     const script=document.createElement("script");
-    script.src="app.js";
+    script.src="app.js?v=20261004-3";
     script.onload=()=>{ ready=true; addAccountControls(); };
     document.body.appendChild(script);
   }
