@@ -107,7 +107,8 @@
     const photoMap={};
     for(const p of photos||[]) (photoMap[p.entry_id] ||= []).push(p);
     const posts=[], journal=[];
-    for(const e of entries||[]){
+    entries.sort((a,b)=>new Date(b.occurred_at)-new Date(a.occurred_at) || String(b.id).localeCompare(String(a.id)));
+    for(const e of entries){
       if(e.entry_type==="post"){
         const photo=(photoMap[e.id]||[]).sort((a,b)=>a.sort_order-b.sort_order)[0];
         posts.push({id:e.id,text:e.body,image:photo?await signedPhoto(photo.storage_path):"",_storagePath:photo?.storage_path||"",mood:e.mood||"",createdAt:e.occurred_at,timestamp:"",saved:e.is_saved});
